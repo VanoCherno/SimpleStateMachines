@@ -1,3 +1,1 @@
 # SimpleStateMachines
-#How To Use:
-
