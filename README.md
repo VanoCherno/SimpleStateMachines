@@ -7,7 +7,7 @@ Every state has ```Id``` by which state machine will allow operations on states.
 
 To use any of state machines firstly you have to create an instance of ```ITransitionManager<TId>``` which stores all transitions and provides a quick way to check if a transition is possible.
 ```csharp
-TransitionManager<string> transitions = new TransitionManager();
+TransitionManager<string> transitions = new TransitionManager<string>();
 ```
 
 # 1. Finite State Machine:
