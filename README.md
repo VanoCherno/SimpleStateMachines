@@ -58,7 +58,7 @@ public class Door : MonoBehaviour
 
   private void Awake()
   {
-    m_stateMachine = new FiniteStateMachine<string, BaseDoorState<string>>(new TransitionManager());
+    m_stateMachine = new FiniteStateMachine<string, BaseDoorState<string>>(new TransitionManager<string>());
 
     // adding states
     m_stateMachine.AddState(new OpenState("open_state"));
@@ -112,7 +112,7 @@ public class Door : MonoBehaviour
 
   private void Awake()
   {
-    m_stateMachine = new DoorStateMachine<string>(new TransitionManager()); // here
+    m_stateMachine = new DoorStateMachine<string>(new TransitionManager<string>()); // here
 
     // adding states
     m_stateMachine.AddState(new OpenState("open_state"));
@@ -218,7 +218,7 @@ public class Door : MonoBehaviour
 
   private void Awake()
   {
-    m_stateMachine = new DoorStateMachine<string>(new TransitionManager());
+    m_stateMachine = new DoorStateMachine<string>(new TransitionManager<string>());
 
     // adding states
     m_stateMachine.AddState(new RootState("root_state"));
