@@ -3,234 +3,266 @@ using System.Collections.Generic;
 
 namespace SimpleStateMachines.Hierarchical
 {
-    public class HierarchicalStateMachine<TId, TState> : IStateTree<TId, TState>, IStateMachine<TId, TState>
-        where TState : class, IHierarchicalState<TId, TState>
+    /// <summary>
+    /// State machine which holds a n-ary tree structure of states.
+    /// Allows for non-hierarchical states. It will create it's own wrapper around states to allow tree structure.
+    /// Can hold multiple state trees
+    /// </summary>
+    public class HierarchicalStateMachine<TId, TState>
+        where TState : BaseState<TId>
     {
-        private readonly Dictionary<TId, List<ITransition<TId>>> m_transitions;
-        private TState m_rootState;
-        private TState m_currentState;
+        private readonly Dictionary<TId, StateNode<TId, TState>> m_nodes;
+        private readonly ITransitionManager<TId> m_transitionManager;
+        private StateNode<TId, TState> m_root;
+        private StateNode<TId, TState> m_lowestActiveNode;
         private TId m_previousStateId;
 
-        public HierarchicalStateMachine()
+        public HierarchicalStateMachine(ITransitionManager<TId> transitionManager)
         {
-            m_transitions = new Dictionary<TId, List<ITransition<TId>>>();
+            m_nodes = new Dictionary<TId, StateNode<TId, TState>>();
+            m_transitionManager = transitionManager;
+            m_root = null;
+            m_lowestActiveNode = null;
+            m_previousStateId = default;
         }
-        
+
+        public TId ActiveStateId => (m_lowestActiveNode != null) ? m_lowestActiveNode.State.Id : default;
         public TId PreviousStateId => m_previousStateId;
-        public TId CurrentStateId => (m_currentState != null) ? m_currentState.Id : default;
-        protected TState CurrentState => m_currentState;
-        protected TState Root => m_rootState;
+        public ITransitionManager<TId> Transitions => m_transitionManager;
+
+        protected IReadOnlyDictionary<TId, StateNode<TId, TState>> Nodes => m_nodes;
+        protected StateNode<TId, TState> Root => m_root;
+        protected StateNode<TId, TState> LowestActiveNode => m_lowestActiveNode;
 
         public event Action OnStateChanged;
 
-        public void AddTransition(ITransition<TId> transition)
+        /// <summary>Sets state with this id as current root of state hierarchy</summary>
+        /// <exception cref="InvalidOperationException"></exception>
+        public void SetRoot(TId id)
         {
-            if (m_transitions.TryGetValue(transition.From, out List<ITransition<TId>> transitions))
-                transitions.Add(transition);
-            else
-                m_transitions.Add(transition.From, new List<ITransition<TId>> { transition });
+            if (!m_nodes.TryGetValue(id, out StateNode<TId, TState> node))
+                throw new InvalidOperationException("State machine does not contain a node with this id.");
+
+            if (node.Parent != null)
+                throw new InvalidOperationException("Can not set a node as root. Root must have no parent.");
+
+            m_root?.Exit();
+            m_root = node;
         }
 
-        public void RemoveTransition(ITransition<TId> transition)
+        public void AddState(TState state)
         {
-            if (m_transitions.TryGetValue(transition.From, out List<ITransition<TId>> transitions))
-                transitions.Remove(transition);
+            if (m_nodes.ContainsKey(state.Id))
+                throw new InvalidOperationException("Can not add state. State with this id has alredy been added.");
+
+            m_nodes.Add(state.Id, new StateNode<TId, TState>(state));
         }
 
-        /// <summary>Provides list of transitions from a given state, if state has no transitions returns empty list</summary>
-        public IReadOnlyList<ITransition<TId>> GetTransitionsFromState(TId id)
+        public bool TryAddState(TState state)
         {
-            if (m_transitions.TryGetValue(id, out List<ITransition<TId>> transitions))
-                return transitions.AsReadOnly();
-
-            return new List<ITransition<TId>>().AsReadOnly();
+            return m_nodes.TryAdd(state.Id, new StateNode<TId, TState>(state));
         }
 
-        public void RemoveAllTransitionsFromState(TId id)
+        public bool RemoveState(TState state)
         {
-            m_transitions.Remove(id);
+            return RemoveState(state.Id);
         }
 
-        public void ClearTransitions()
+        public bool RemoveState(TId id)
         {
-            m_transitions.Clear();
-        }
-
-        /// <summary>Sets and enters root state, parent of root must be always set to null</summary>
-        /// <exception cref="ArgumentNullException"></exception>
-        /// <exception cref="ArgumentException"></exception>
-        public void SetRootState(TState root)
-        {
-            if (root == null)
-                throw new ArgumentNullException($"{root}");
-
-            if (root.Parent != null)
-                throw new ArgumentException("The root state must have no parent.");
-
-            m_rootState = root;
-            m_currentState = root;
-            m_currentState.Enter();
-            OnStateChanged?.Invoke();
-        }
-
-        /// <summary>Exits all active states including root, removes root. After this the state tree will be empty</summary>
-        public void RemoveRootState()
-        {
-            if (m_rootState == null)
-                return;
-
-            TryChangeState(m_currentState, m_rootState);
-            m_rootState.Exit();
-            m_rootState = null;
-            m_currentState = null;
-            m_previousStateId = default;
-            OnStateChanged?.Invoke();
-        }
-
-        /// <summary>Checks all transitions from the active state, if a transition should be made changes state</summary>
-        public void TickTransitions()
-        {
-            List<ITransition<TId>> transitions;
-
-            if (m_currentState == null)
-                return;
-
-            if (!m_transitions.TryGetValue(m_currentState.Id, out transitions))
-                return;
-
-            for (int i = 0; i < transitions.Count; i++)
-            {
-                if (!transitions[i].ShouldTransition())
-                    continue;
-
-                if (TryChangeState(transitions[i].To))
-                    return;
-            }
-        }
-
-        /// <summary>Checks if state is currently active lowest state</summary>
-        public bool IsInState(TId id)
-        {
-            if (m_currentState == null)
+            if (!m_nodes.TryGetValue(id, out StateNode<TId, TState> node))
                 return false;
 
-            return EqualityComparer<TId>.Default.Equals(m_currentState.Id, id);
+            if (node.IsActive())
+                return false;
+
+            node.Parent.RemoveChild(node);
+            node.SetParent(null);
+            m_nodes.Remove(id);
+            return true;
         }
 
-        public bool IsStateActiveInHierarchy(TId id)
+        /// <summary>Exits all active states and deletes all states from state machine</summary>
+        public void Clear()
         {
-            return IsStateActiveInHierarchy(GetStateById(id));
+            m_root?.Exit();
+            m_root = null;
+            m_lowestActiveNode = null;
+            m_previousStateId = default;
+            ClearAllConnections();
+            m_nodes.Clear();
         }
 
-        public bool IsStateActiveInHierarchy(TState state)
+        /// <summary>Exits all active states</summary>
+        public void Exit()
         {
-            List<TState> pathToRoot = GetPathToRootFromState(m_currentState);
-            for (int i = 0; i < pathToRoot.Count; i++)
+            if (m_root == null)
+                return;
+
+            m_root.Exit();
+            m_lowestActiveNode = null;
+            OnStateChanged?.Invoke();
+        }
+
+        public TState GetState(TId id)
+        {
+            if (m_nodes.TryGetValue(id, out StateNode<TId, TState> node))
+                return node.State;
+
+            return null;
+        }
+
+        public TState[] GetAllStates()
+        {
+            int i = 0;
+            TState[] states = new TState[m_nodes.Values.Count];
+
+            foreach (StateNode<TId, TState> node in m_nodes.Values)
             {
-                if (state == pathToRoot[i])
-                    return true;
+                states[i] = node.State;
+                i++;
             }
 
-            return false;
-        }
-
-        /// <summary>Performs depth first search on the state tree, returns null if state with this id is not found</summary>
-        public TState GetStateById(TId id)
-        {
-            TState state = null;
-            Action<TState> onNode = (node) =>
-            {
-                if (EqualityComparer<TId>.Default.Equals(node.Id, id))
-                    state = node;
-            };
-
-            DepthFirstSearch(onNode);
-            return state;
-        }
-
-        /// <summary>Performs depth first search, returns all states of the tree</summary>
-        public List<TState> GetAllStates()
-        {
-            List<TState> states = new List<TState>();
-            DepthFirstSearch((TState state) => states.Add(state));
             return states;
         }
 
-        /// <summary>Immediately changes state of state machine, if state with this id exists and is not currently active lowest state</summary>
-        public bool TryChangeState(TId id)
+        public TId[] GetAllIds()
         {
-            return TryChangeState(m_currentState, GetStateById(id));
-        }
+            int i = 0;
+            TId[] ids = new TId[m_nodes.Keys.Count];
 
-        protected bool TryChangeState(TState from, TState to)
-        {
-            if (from == to)
-                return false;
-
-            if (from == null || to == null)
-                return false;
-
-            List<TState> fromPathToRoot = GetPathToRootFromState(from);
-            List<TState> toPathToRoot = GetPathToRootFromState(to);
-            int lowestCommonAncestorOffset = 0;
-
-            // checking if nodes are in the same tree by comparing their roots
-            if (toPathToRoot[toPathToRoot.Count - 1] != fromPathToRoot[fromPathToRoot.Count - 1])
-                return false;
-
-            // walking down from root to lowest common ancestor
-            while (lowestCommonAncestorOffset < fromPathToRoot.Count && lowestCommonAncestorOffset < toPathToRoot.Count &&
-                fromPathToRoot[fromPathToRoot.Count - lowestCommonAncestorOffset - 1] == toPathToRoot[toPathToRoot.Count - lowestCommonAncestorOffset - 1])
+            foreach (TId id in m_nodes.Keys)
             {
-                lowestCommonAncestorOffset++;
+                ids[i] = id;
+                i++;
             }
 
-            // exiting from all states up to LCA
-            for (int i = 0; i < fromPathToRoot.Count - lowestCommonAncestorOffset; i++)
-                fromPathToRoot[i].Exit();
+            return ids;
+        }
 
-            // entering to all states from LCA
-            for (int i = toPathToRoot.Count - lowestCommonAncestorOffset - 1; i > -1; i--)
-                toPathToRoot[i].Enter();
+        /// <summary>Creates parent-child connection between states</summary>
+        /// <exception cref="InvalidOperationException"></exception>
+        public void MakeParent(TId stateId, TId parentId)
+        {
+            if (CompareIds(stateId, parentId))
+                throw new InvalidOperationException("Can not set a state as a parent of itself.");
 
-            m_previousStateId = from.Id;
-            m_currentState = to;
+            if (!m_nodes.TryGetValue(stateId, out StateNode<TId, TState> node))
+                throw new InvalidOperationException($"Can not set parent to state. State with {stateId} is not assigned to this state machine.");
+
+            if (!m_nodes.TryGetValue(parentId, out StateNode<TId, TState> parent))
+                throw new InvalidOperationException($"Can not set child to state. State with {parentId} is not assigned to this state machine.");
+
+            if (node == m_root)
+                throw new InvalidOperationException("Can not set parent to the root node.");
+
+            if (node.Parent != null)
+                throw new InvalidOperationException($"Can not set parent to state. The state {stateId} already has a parent. Remove current parent before calling this method.");
+
+            if (parent.IsParentOf(node))
+                throw new InvalidOperationException("Can not set parent to state. This parent is already set.");
+
+            if (node.IsParentOf(parent))
+                throw new InvalidOperationException($"Can not set parent to state as this state {stateId} is parent of {parentId}");
+
+            parent.AddChild(node);
+            node.SetParent(parent);
+        }
+
+        /// <summary>Creates parent-child connection between states</summary>
+        public bool TryMakeParent(TId stateId, TId parentId)
+        {
+            if (CompareIds(stateId, parentId))
+                return false;
+
+            if (!m_nodes.TryGetValue(stateId, out StateNode<TId, TState> node))
+                return false;
+
+            if (!m_nodes.TryGetValue(parentId, out StateNode<TId, TState> parent))
+                return false;
+
+            if (node == m_root)
+                return false;
+
+            if (node.Parent != null)
+                return false;
+
+            if (parent.IsParentOf(node))
+                return false;
+
+            if (node.IsParentOf(parent))
+                return false;
+
+            parent.AddChild(node);
+            node.SetParent(parent);
+            return true;
+        }
+
+        /// <summary>Removes parent-child connection from state</summary>
+        public bool ClearParent(TId stateId)
+        {
+            if (!m_nodes.TryGetValue(stateId, out StateNode<TId, TState> node))
+                return false;
+
+            node.SetParent(null);
+            node?.Parent.RemoveChild(node);
+            return true;
+        }
+
+        /// <summary>Removes all connections from all states</summary>
+        public void ClearAllConnections()
+        {
+            foreach (StateNode<TId, TState> node in m_nodes.Values)
+            {
+                node.Parent.RemoveChild(node);
+                node.SetParent(null);
+            }
+        }
+
+        /// <summary>Checks if any transitions possible from currently active lowest state. If so - performs transition</summary>
+        public void TickTransitions()
+        {
+            if (m_lowestActiveNode == null)
+                return;
+
+            if (m_transitionManager.ShouldTransition(m_lowestActiveNode.State.Id, out TId to))
+                ChangeState(to);
+        }
+
+        /// <summary>Transitions to another state if state connections allow such transition</summary>
+        public bool ChangeState(TId to)
+        {
+            StateNode<TId, TState> active = m_lowestActiveNode;
+            StateNode<TId, TState> lowestCommonAncestor = null;
+
+            if (m_root == null)
+                return false;
+
+            if (!m_nodes.TryGetValue(to, out StateNode<TId, TState> next))
+                return false;
+
+            if (active == null)
+                active = m_root;
+            else if (active == next)
+                return false;
+
+            lowestCommonAncestor = active.GetLowestCommonAncestor(next);
+
+            if (lowestCommonAncestor == null)
+                return false;
+
+            if (lowestCommonAncestor.Active != null)
+                lowestCommonAncestor.Active.Exit();
+
+            m_lowestActiveNode = next;
+            next.Enter();
             OnStateChanged?.Invoke();
             return true;
         }
 
-        protected List<TState> GetPathToRootFromState(TState state)
+        private bool CompareIds(TId a, TId b)
         {
-            List<TState> path = new List<TState>();
-
-            while (state != null)
-            {
-                path.Add(state);
-                state = state.Parent;
-            }
-
-            return path;
-        }
-
-        protected void DepthFirstSearch(Action<TState> onNodeFound)
-        {
-            List<TState> states = new List<TState>();
-
-            if (m_rootState == null || onNodeFound == null)
-                return;
-
-            Stack<TState> stateStack = new Stack<TState>();
-            stateStack.Push(m_rootState);
-
-            while (stateStack.Count > 0)
-            {
-                TState current = stateStack.Pop();
-
-                onNodeFound.Invoke(current);
-
-                foreach (TState state in current.States)
-                    stateStack.Push(state);
-            }
+            return EqualityComparer<TId>.Default.Equals(a, b);
         }
     }
 }

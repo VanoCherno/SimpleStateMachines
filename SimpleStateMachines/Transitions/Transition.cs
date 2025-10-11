@@ -10,12 +10,20 @@ namespace SimpleStateMachines.Transitions
 
         public Transition(TId from, TId to, Func<bool> condition)
         {
-            m_from = from;
             m_to = to;
+            m_from = from;
+            this.condition = condition;
+        }
+
+        public Transition(BaseState<TId> from, BaseState<TId> to, Func<bool> condition)
+        {
+            m_from = from.Id;
+            m_to = to.Id;
             this.condition = condition;
         }
 
         public TId From => m_from;
+
         public TId To => m_to;
 
         public bool ShouldTransition()

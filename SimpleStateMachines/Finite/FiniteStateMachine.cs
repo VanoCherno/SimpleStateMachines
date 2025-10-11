@@ -1,65 +1,86 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace SimpleStateMachines.Finite
 {
-    public class FiniteStateMachine<TId, TState> : IStateMachine<TId, TState>
-        where TState : class, IState<TId>
+    /// <summary>
+    /// A simple finite state machine no comments needed
+    /// </summary>
+    public class FiniteStateMachine<TId, TState> where TState : BaseState<TId>
     {
-        private readonly Dictionary<TId, List<ITransition<TId>>> m_transitions;
         private readonly Dictionary<TId, TState> m_states;
+        private readonly ITransitionManager<TId> m_transitionManager;
+        private TState m_activeState;
         private TId m_previousStateId;
-        private TState m_currentState;
 
-        public FiniteStateMachine()
+        public FiniteStateMachine(ITransitionManager<TId> transitionManager)
         {
-            m_transitions = new Dictionary<TId, List<ITransition<TId>>>();
             m_states = new Dictionary<TId, TState>();
-            m_currentState = null;
+            m_activeState = null;
             m_previousStateId = default;
+            m_transitionManager = transitionManager;
         }
 
-        public TId CurrentStateId => (m_currentState != null) ? m_currentState.Id : default;
+        public TId ActiveStateId => (m_activeState != null) ? m_activeState.Id : default;
         public TId PreviousStateId => m_previousStateId;
-        protected TState CurrentState => m_currentState;
+        public ITransitionManager<TId> Transitions => m_transitionManager;
+
+        protected IReadOnlyDictionary<TId, TState> States => m_states;
+        protected TState ActiveState => m_activeState;
 
         public event Action OnStateChanged;
 
-        public void AddTransition(ITransition<TId> transition)
+        public void AddState(TState state)
         {
-            if (m_transitions.TryGetValue(transition.From, out List<ITransition<TId>> transitions))
-                transitions.Add(transition);
-            else
-                m_transitions.Add(transition.From, new List<ITransition<TId>> { transition });
+            if (m_states.ContainsKey(state.Id))
+                throw new InvalidOperationException("Can not add state. State with this id has already been added.");
+
+            m_states.Add(state.Id, state);
         }
 
-        public void RemoveTransition(ITransition<TId> transition)
+        public bool TryAddState(TState state)
         {
-            if (m_transitions.TryGetValue(transition.From, out List<ITransition<TId>> transitions))
-                transitions.Remove(transition);
+            return m_states.TryAdd(state.Id, state);
         }
 
-        /// <summary>Provides list of transitions from a given state, if state has no transitions returns empty list</summary>
-        public IReadOnlyList<ITransition<TId>> GetTransitionsFromState(TId id)
+        public bool RemoveState(TState state)
         {
-            if (m_transitions.TryGetValue(id, out List<ITransition<TId>> transitions))
-                return transitions.AsReadOnly();
+            if (m_activeState == state)
+                return false;
 
-            return new List<ITransition<TId>>().AsReadOnly();
+            return m_states.Remove(state.Id);
         }
 
-        public void RemoveAllTransitionsFromState(TId id)
+        public bool RemoveState(TId id)
         {
-            m_transitions.Remove(id);
+            if (!m_states.TryGetValue(id, out TState state))
+                return false;
+
+            return RemoveState(state);
         }
 
-        public void ClearTransitions()
+        /// <summary>Exits active state and deletes all states from state machine</summary>
+        public void Clear()
         {
-            m_transitions.Clear();
+            m_activeState?.Exit();
+            m_activeState = null;
+            m_previousStateId = default;
+            m_states.Clear();
         }
 
-        /// <summary>Provides a state of given id, returns null if state with this id is not found</summary>
-        public TState GetStateById(TId id)
+        /// <summary>Exits active state</summary>
+        public void Exit()
+        {
+            if (m_activeState == null)
+                return;
+
+            m_previousStateId = m_activeState.Id;
+            m_activeState.Exit();
+            m_activeState = null;
+            OnStateChanged?.Invoke();
+        }
+
+        public TState GetState(TId id)
         {
             if (m_states.TryGetValue(id, out TState state))
                 return state;
@@ -67,94 +88,63 @@ namespace SimpleStateMachines.Finite
             return null;
         }
 
-        public List<TState> GetAllStates()
+        public TState[] GetAllStates()
         {
-            List<TState> states = new List<TState>();
+            int i = 0;
+            TState[] states = new TState[m_states.Values.Count];
 
             foreach (TState state in m_states.Values)
-                states.Add(state);
+            {
+                states[i] = state;
+                i++;
+            }
 
             return states;
         }
 
-        /// <summary>Adds state if state with this id does not already exist</summary>
-        public bool TryAddState(TState state)
+        public TId[] GetAllIds()
         {
-            return m_states.TryAdd(state.Id, state);
+            int i = 0;
+            TId[] ids = new TId[m_states.Keys.Count];
+
+            foreach(TId id in m_states.Keys)
+            {
+                ids[i] = id;
+                i++;
+            }
+
+            return ids;
         }
 
-        /// <summary>Removes state if state with this id exists and is not currently active state</summary>
-        public bool TryRemoveState(TState state)
-        {
-            return TryRemoveState(state.Id);
-        }
-
-        /// <summary>Removes state if state with this id exists and is not currently active state</summary>
-        public bool TryRemoveState(TId id)
-        {
-            if (!m_states.ContainsKey(id))
-                return false;
-
-            if (IsInState(id))
-                return false;
-
-            m_states.Remove(id);
-            m_transitions.Remove(id);
-            return true;
-        }
-
-        /// <summary>Checks all transitions from the active state, if a transition should be made changes state</summary>
+        /// <summary>Checks if any transitions possible from currently active state. If so - performs transition</summary>
         public void TickTransitions()
         {
-            List<ITransition<TId>> transitions;
-
-            if (m_currentState == null)
+            if (m_activeState == null)
                 return;
 
-            if (!m_transitions.TryGetValue(m_currentState.Id, out transitions))
-                return;
-
-            for (int i = 0; i < transitions.Count; i++)
-            {
-                if (!transitions[i].ShouldTransition())
-                    continue;
-
-                if (TryChangeState(transitions[i].To))
-                    return;
-            }
+            if (m_transitionManager.ShouldTransition(m_activeState.Id, out TId to))
+                ChangeState(to);
         }
 
-        /// <summary>Immediately changes state of state machine, if state with this id exists and is not currently active state</summary>
-        public bool TryChangeState(TId id)
+        /// <summary>Transitions to a another state if this state is assigned to this state machine</summary>
+        public bool ChangeState(TId to)
         {
-            if (!m_states.TryGetValue(id, out TState next))
+            if (!m_states.TryGetValue(to, out TState next))
                 return false;
 
-            if (IsInState(id))
+            if (m_activeState == next)
                 return false;
 
-            if (m_currentState != null)
+            if (m_activeState != null)
             {
-                m_currentState.Exit();
-                m_previousStateId = m_currentState.Id;
+                m_activeState.Exit();
+                m_previousStateId = m_activeState.Id;
             }
 
-            m_currentState = next;
-            m_currentState.Enter();
+            m_activeState = next;
+            m_activeState.Enter();
             OnStateChanged?.Invoke();
             return true;
         }
-
-        public bool IsInState(TId id)
-        {
-            if (m_currentState == null)
-                return false;
-
-            return EqualityComparer<TId>.Default.Equals(m_currentState.Id, id);
-        }
     }
 }
-
-
-
-

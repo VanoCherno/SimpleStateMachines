@@ -1,0 +1,141 @@
+﻿using System;
+using System.Collections.Generic;
+
+namespace SimpleStateMachines.Hierarchical
+{
+    /// <summary>
+    /// Wrapper class around state class to allow tree hierarchy
+    /// </summary>
+    public class StateNode<TId, TState> where TState : BaseState<TId>
+    {
+        private readonly TState m_state;
+        private StateNode<TId, TState> m_parent;
+        private StateNode<TId, TState> m_activeChild;
+        private List<StateNode<TId, TState>> m_children;
+
+        public StateNode(TState state)
+        {
+            if (state == null)
+                throw new ArgumentNullException(nameof(state));
+
+            m_state = state;
+        }
+
+        public TState State => m_state;
+        public StateNode<TId, TState> Parent => m_parent;
+        public StateNode<TId, TState> Active => m_activeChild;
+        public IReadOnlyList<StateNode<TId, TState>> Children => m_children;
+
+        public void SetParent(StateNode<TId, TState> node)
+        {
+            if (node == this)
+                throw new InvalidOperationException("Can not make this instance a parent of itself.");
+
+            m_parent = node;
+        }
+
+        public void AddChild(StateNode<TId, TState> node)
+        {
+            if (node == this)
+                throw new InvalidOperationException("Can not make this instance a child of itself.");
+
+            if (m_children.Contains(node))
+                throw new InvalidOperationException("Can not add a child since the object already contains this instance as a child.");
+
+            m_children.Add(node);
+        }
+
+        public void RemoveChild(StateNode<TId, TState> node)
+        {
+            m_children.Remove(node);
+        }
+
+        public bool IsParentOf(StateNode<TId, TState> node)
+        {
+            return m_children.Contains(node);
+        }
+
+        public bool IsActive()
+        {
+            if (m_parent == null)
+                return true;
+
+            return m_parent.Active == this;
+        }
+
+        public void Enter()
+        {
+            if (m_parent != null)
+            {
+                m_parent.SetActiveChild(this);
+
+                if (!m_parent.IsActive())
+                    m_parent.Enter();
+            }
+
+            m_state.Enter();
+        }
+
+        public void Exit()
+        {
+            m_activeChild?.Exit();
+            m_activeChild = null;
+            m_state.Exit();
+        }
+
+        public List<StateNode<TId, TState>> GetPathToRoot()
+        {
+            List<StateNode<TId, TState>> path = new List<StateNode<TId, TState>>();
+            StateNode<TId, TState> node = this;
+
+            while (node != null)
+            {
+                path.Add(node);
+                node = node.Parent;
+            }
+
+            return path;
+        }
+
+        public List<StateNode<TId, TState>> GetPathToLowestActive()
+        {
+            List<StateNode<TId, TState>> path = new List<StateNode<TId, TState>>();
+            StateNode<TId, TState> node = this;
+
+            while (node != null)
+            {
+                path.Add(node);
+                node = node.Active;
+            }
+
+            return path;
+        }
+
+        public StateNode<TId, TState> GetLowestCommonAncestor(StateNode<TId, TState> other)
+        {
+            StateNode<TId, TState> node = other;
+            HashSet<StateNode<TId, TState>> nodes = new HashSet<StateNode<TId, TState>>();
+
+            while (node != null)
+            {
+                nodes.Add(node);
+                node = node.Parent;
+            }
+
+            node = this;
+
+            while (node != null)
+            {
+                if (nodes.Contains(node))
+                    return node;
+            }
+
+            return null;
+        }
+
+        private void SetActiveChild(StateNode<TId, TState> node)
+        {
+            m_activeChild = node;
+        }
+    }
+}
