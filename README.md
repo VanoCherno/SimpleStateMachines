@@ -23,7 +23,8 @@ public abstract class BaseDoorState<TId> : BaseState<TId>
 {
   protected BaseDoorState(TId id) : base(id) {}
 }
-
+```
+```csharp
 public class OpenState<TId> : BaseDoorState<TId>
 {
   public OpenState(TId id) : base(id) {}
@@ -35,7 +36,8 @@ public class OpenState<TId> : BaseDoorState<TId>
 
   public override void Exit() {}
 }
-
+```
+```csharp
 public class ClosedState<TId> : BaseDoorState<TId>
 {
   public ClosedState(TId id) : base(id) {}
@@ -112,11 +114,11 @@ using UnityEngine;
 
 public class Door : MonoBehaviour
 {
-  private DoorStateMachine<string> m_stateMachine;
+  private DoorStateMachine<string> m_stateMachine; // here
 
   private void Awake()
   {
-    m_stateMachine = new DoorStateMachine<string>(new TransitionManager());
+    m_stateMachine = new DoorStateMachine<string>(new TransitionManager()); // here
 
     // adding states
     m_stateMachine.AddState(new OpenState("open_state"));
@@ -130,7 +132,7 @@ public class Door : MonoBehaviour
   private void Update()
   {
     m_stateMachine.TickTransitions();
-    m_stateMachine.Tick(Time.deltaTime);
+    m_stateMachine.Tick(Time.deltaTime); // and here
   }
 }
 ```
