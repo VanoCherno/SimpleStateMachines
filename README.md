@@ -30,7 +30,7 @@ public class OpenState<TId> : BaseDoorState<TId>
 
   public override void Enter()
   {
-    Console.WriteLine("door is open");
+    Debug.Log("door is open");
   }
 
   public override void Exit() {}
@@ -42,7 +42,7 @@ public class ClosedState<TId> : BaseDoorState<TId>
 
   public override void Enter()
   {
-    Console.WriteLine("door is closed");
+    Debug.Log("door is closed");
   }
 
   public override void Exit() {}
@@ -74,6 +74,63 @@ public class Door : MonoBehaviour
   private void Update()
   {
     m_stateMachine.TickTransitions();
+  }
+}
+```
+
+# Extending FiniteStateMachine:
+Let's assume we need also to be able to update the door each frame.
+To do this we should modify our door states, adding ```Tick(float deltaTime)``` to each state.
+
+I will only show how ```BaseDoorState<TId>``` class changes.
+
+```csharp
+public abstract class BaseDoorState<TId> : BaseState<TId>
+{
+  protected BaseDoorState(TId id) : base(id) {}
+
+  public abstract void Tick(float deltaTime);
+}
+```
+
+Next we'll need to extend ```FiniteStateMachine<TId, TState>``` class to support this change. This class has ```protected TState ActiveState``` which we will use to access our current state.
+
+```csharp
+public class DoorStateMachine<TId> : FiniteStateMachine<TId, BaseDoorState<TId>>
+{
+  public void Tick(float deltaTime)
+  {
+    base.ActiveState.Tick(deltaTime);
+  }
+}
+```
+
+The ```Door``` class will chagne only a little:
+
+```csharp
+using UnityEngine;
+
+public class Door : MonoBehaviour
+{
+  private DoorStateMachine<string> m_stateMachine;
+
+  private void Awake()
+  {
+    m_stateMachine = new DoorStateMachine<string>(new TransitionManager());
+
+    // adding states
+    m_stateMachine.AddState(new OpenState("open_state"));
+    m_stateMachine.AddState(new ClosedState("closed_state"));
+
+    // adding transitions between states
+    m_stateMachine.Transitions.Add(new Transition<string>("open_state", "closed_state", () => Input.GetKeyDown(KeyCode.Space)));
+    m_stateMachine.Transitions.Add(new Transition<string>("closed_state", "open_state", () => Input.GetKeyDown(KeyCode.Space)));
+  }
+
+  private void Update()
+  {
+    m_stateMachine.TickTransitions();
+    m_stateMachine.Tick(Time.deltaTime);
   }
 }
 ```
