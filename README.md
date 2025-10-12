@@ -282,3 +282,4 @@ public class Door
 ```
 # Note
 If you have multiple ```ConditionalTransition<TId>``` or ```TimedTransition<TId>``` you can put them into their respective container ```ConditionalTransitionContainer<TId>``` and ```TimedTransitionContainer<TId>``` to free up your code from having too many variables.
+```TriggeredTransition<TId>``` does not have a container since they are intended to be manually triggered.
