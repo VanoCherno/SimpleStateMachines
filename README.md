@@ -1,6 +1,6 @@
 # SimpleStateMachines
 Extendable and easy to use finite and hierarchical state machines to use in your projects.
-Primarily designed for Unity but since it does not depend on it you can use it outside of Unity.
+Primarily designed for Unity but since it does not depend on it you can use it outside of Unity as well.
 
 # Overview:
 Every state has ```Id``` by which state machine will allow operations on states. It's a generic value so you can use what ever you like as an ```Id```.
