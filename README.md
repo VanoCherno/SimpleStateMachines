@@ -84,7 +84,7 @@ public class Door
 }
 ```
 
-# Extending FiniteStateMachine:
+# Extending The StateMachine:
 Let's assume we need also to be able to update the door each frame.
 To do this we should modify our door states, adding ```Tick(float deltaTime)``` to each state.
 
