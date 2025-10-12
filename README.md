@@ -280,5 +280,5 @@ public class Door
   }
 }
 ```
-
-Well that's it, have fun making cool projects!
+# Note
+If you have multiple ```ConditionalTransition<TId>``` or ```TimedTransition<TId>``` you can put them into their respective container ```ConditionalTransitionContainer<TId>``` and ```TimedTransitionContainer<TId>``` to free up your code from having too many variables.
