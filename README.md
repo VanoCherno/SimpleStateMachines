@@ -1,21 +1,22 @@
 # SimpleStateMachines
-Extendable and easy to use finite and hierarchical state machines to use in your personal project.
-You can use it with Unity or .Net and extend or modify for all your needs and purposes.
+Extendable and easy to use finite and hierarchical state machines to use in your projects.
+Primarily designed for Unity but since it does not depend on it you can use it outside of Unity.
 
-# How To Use:
+# Overview:
 Every state has ```Id``` by which state machine will allow operations on states. It's a generic value so you can use what ever you like as an ```Id```.
 
-To use any of state machines firstly you have to create an instance of ```ITransitionManager<TId>``` which stores all transitions and provides a quick way to check if a transition is possible.
-```csharp
-TransitionManager<string> transitions = new TransitionManager<string>();
-```
+You may use interfaces ```IStateMachine<TId, TState>```, ```IReadonlyStateMachine<TId, TState>```, ```IStateSwitcher<TId>``` to interact with state machines with different levels of access to their functionality.
+You can change state of a state machine by calling ```ChangeState(TId id)``` method, use built-in transitions, or create your own. State machines do not depend on transitions, rather transition is a controlling module for changing state of a state machine.
+So whether to use transitions, or make states responsible for state changing, or create a custom transitioning module, it's up to you.
+
+Also both Finite and Hierarchical state machines accept ```BaseState<TId>```, it's done to provide reusability of states that already had been written for another type of state machine. If you would like to constrain your state to only be used in hierarchical state machine you can inherit from ```BaseHierarchicalState<TId>``` instead. Inside hierarchical state machine uses wrapper class ```StateNode<TId, TState>``` around ```BaseState<TId>``` to allow tree-like structure.
 
 # 1. Finite State Machine:
-Let's use ```FiniteStateMachine<TId, TState>``` to create a ```Door``` as an example.
+Let's use ```FiniteStateMachine<TId, TState>``` to create a ```Door``` as an example. A door can be open or closed so we can use states to describe that.
 
-First let's create states for our ```Door```. We will leave ```TId``` undefined to be able to easily change it later if such need shall arise.
+First let's create states for our ```Door```. We will leave ```TId``` as a generic to be able to change it in the future.
 
-Any state you create has to inherit from ```BaseState<TId>``` class.
+Any state you create has to inherit from ```BaseState<TId>``` class to be used in a state machine.
 ```csharp
 public abstract class BaseDoorState<TId> : BaseState<TId>
 {
@@ -29,7 +30,7 @@ public class OpenState<TId> : BaseDoorState<TId>
 
   public override void Enter()
   {
-    Debug.Log("door is open");
+    Console.WriteLine("door is open");
   }
 
   public override void Exit() {}
@@ -42,39 +43,43 @@ public class ClosedState<TId> : BaseDoorState<TId>
 
   public override void Enter()
   {
-    Debug.Log("door is closed");
+    Console.WriteLine("door is closed");
   }
 
   public override void Exit() {}
 }
 ```
-Now the ```Door``` class which will open whenever we press ```Space```.
+Now for the ```Door``` class. We'll use ```TriggeredTransition<TId>``` for controlling state flow of the state machine in this example.
 ```csharp
-using UnityEngine;
-
-public class Door : MonoBehaviour
+public class Door
 {
   private FiniteStateMachine<string, BaseDoorState<string>> m_stateMachine;
+  private TriggeredTransition<string> m_closedToOpenTransition;
+  private TriggeredTransition<string> m_openToClosedTransition;
 
-  private void Awake()
+  public Door()
   {
-    m_stateMachine = new FiniteStateMachine<string, BaseDoorState<string>>(new TransitionManager<string>());
+    // instantiating state machine and transitions
+    m_stateMachine = new FiniteStateMachine<string, BaseDoorState<string>>();
+    m_closedToOpenTransition = new TriggeredTransition<string>(m_stateMachine, "closed_state", "open_state");
+    m_openToClosedTransition = new TriggeredTransition<string>(m_stateMachine, "open_state", "closed_state");
 
     // adding states
     m_stateMachine.AddState(new OpenState("open_state"));
     m_stateMachine.AddState(new ClosedState("closed_state"));
 
-    // adding transitions between states
-    m_stateMachine.Transitions.Add(new Transition<string>("open_state", "closed_state", () => Input.GetKeyDown(KeyCode.Space)));
-    m_stateMachine.Transitions.Add(new Transition<string>("closed_state", "open_state", () => Input.GetKeyDown(KeyCode.Space)));
-
     // switching to initial state
     m_stateMachine.ChangeState("closed_state");
   }
 
-  private void Update()
+  public void Open()
   {
-    m_stateMachine.TickTransitions();
+    m_closedToOpenTransition.Trigger();
+  }
+
+  public void Close()
+  {
+    m_openToClosedTransition.Trigger();
   }
 }
 ```
@@ -104,40 +109,48 @@ public class DoorStateMachine<TId> : FiniteStateMachine<TId, BaseDoorState<TId>>
 ```
 The ```Door``` class will chagne only a little:
 ```csharp
-using UnityEngine;
-
-public class Door : MonoBehaviour
+public class Door
 {
-  private DoorStateMachine<string> m_stateMachine; // here
+  private DoorStateMachine<string, BaseDoorState<string>> m_stateMachine;
+  private TriggeredTransition<string> m_closedToOpenTransition;
+  private TriggeredTransition<string> m_openToClosedTransition;
 
-  private void Awake()
+  public Door()
   {
-    m_stateMachine = new DoorStateMachine<string>(new TransitionManager<string>()); // here
+    // instantiating state machine and transitions
+    m_stateMachine = new DoorStateMachine<string, BaseDoorState<string>>();
+    m_closedToOpenTransition = new TriggeredTransition<string>(m_stateMachine, "closed_state", "open_state");
+    m_openToClosedTransition = new TriggeredTransition<string>(m_stateMachine, "open_state", "closed_state");
 
     // adding states
     m_stateMachine.AddState(new OpenState("open_state"));
     m_stateMachine.AddState(new ClosedState("closed_state"));
 
-    // adding transitions between states
-    m_stateMachine.Transitions.Add(new Transition<string>("open_state", "closed_state", () => Input.GetKeyDown(KeyCode.Space)));
-    m_stateMachine.Transitions.Add(new Transition<string>("closed_state", "open_state", () => Input.GetKeyDown(KeyCode.Space)));
-
     // switching to initial state
     m_stateMachine.ChangeState("closed_state");
   }
 
-  private void Update()
+  public void Open()
   {
-    m_stateMachine.TickTransitions();
-    m_stateMachine.Tick(Time.deltaTime); // and here
+    m_closedToOpenTransition.Trigger();
+  }
+
+  public void Close()
+  {
+    m_openToClosedTransition.Trigger();
+  }
+
+  public void Tick(float deltaTime)
+  {
+    m_stateMachine.Tick(deltaTime);
   }
 }
 ```
 
 # 2. Hierarchical State Machine:
-Hierarchical state machine supports states inherited from ```BaseState<TId>``` so you can use your states from ```FiniteStateMachine<TId, TState>```.
+Hierarchical state machine supports states inherited from ```BaseState<TId>``` so you can we can use states from ```FiniteStateMachine<TId, TState>```.
 
-But despite ```HierarchicalStateMachine<TId, TState>``` having some similarities in interface with ```FiniteStateMachine<TId, TState>```. They function differently and you need to handle inheritance from it differently.
+But despite ```HierarchicalStateMachine<TId, TState>``` having some similarities in interface with ```FiniteStateMachine<TId, TState>```. They function differently and we need to handle inheritance from it differently.
 
 Now let's add some more functionality to the ```Door```. Now the ```Door``` can be locked.
 For this we will need a Hierarchical State Machine, since the door can only be locked when it's closed. So it makes sence to make ```LockedState<TId>``` a child of ```ClosedState<TId>```.
@@ -160,12 +173,12 @@ public class LockedState<TId> : BaseDoorState<TId>
 
   public override void Enter()
   {
-    Debug.Log("door is locked");
+    Console.WriteLine("door is locked");
   }
 
   public override void Exit()
   {
-    Debug.Log("door is unlocked");
+    Console.WriteLine("door is unlocked");
   }
 
   public override void Tick(float deltaTime) {}
@@ -186,11 +199,11 @@ public class RootState<TId> : BaseDoorState<TId>
 }
 ```
 
-Now we will have to change the ```DoorStateMachine<TId>``` and transition to using ```HierarchicalStateMachine<TId, TState>```.
+Now we will have to change the ```DoorStateMachine<TId>``` transitioning it to ```HierarchicalStateMachine<TId, TState>```.
 HSM does not have ```protected TState ActiveState```, instead it uses ```StateNode<TId, TState>``` as a wrapper around ```BaseState<TId>``` to allow tree-like structure of hierarchical state machines.
-So we can use properties like ```protected StateNode<TId, TState> Root``` and ```protected StateNode<TId, TState> LowestActiveNode```.
+We can use properties ```protected StateNode<TId, TState> Root``` and ```protected StateNode<TId, TState> LowestActiveNode```.
 
-We will modify our state machine to update states sequentially eg. before updating current state - update it's parent.
+We will modify our class ```DoorStateMachine<TId>``` to update states sequentially eg. before updating current state - update it's parent.
 ```csharp
 public class DoorStateMachine<TId> : HierarchicalStateMachine<TId, BaseDoorState<TId>>
 {
@@ -208,44 +221,62 @@ public class DoorStateMachine<TId> : HierarchicalStateMachine<TId, BaseDoorState
 }
 ```
 
-Only thing thats left is to change our ```Door``` class. Making door locked or unlocked when we press ```L``` button.
+Only thing thats left is to change the ```Door``` class. And now lets imagine the door uses a smart lock which will lock the door after 5 seconds of door being closed. And to unlock the door we will have to provide a password.
+For these we will use ```TimedTransition<TId>``` and ```ConditionalTransition<TId>```.
 ```csharp
-using UnityEngine;
-
-public class Door : MonoBehaviour
+public class Door
 {
-  private DoorStateMachine<string> m_stateMachine;
+  private DoorStateMachine<string, BaseDoorState<string>> m_stateMachine;
+  private TriggeredTransition<string> m_closedToOpenTransition;
+  private TriggeredTransition<string> m_openToClosedTransition;
+  private TimedTransition<string> m_closedToLockedTransition;
+  private ConditionalTransition<string> m_lockedToClosedTransition;
 
-  private void Awake()
+  private float m_closeDelaySeconds = 5f;
+  private string m_password = "123";
+  private string m_inputPassword;
+
+  public Door()
   {
-    m_stateMachine = new DoorStateMachine<string>(new TransitionManager<string>());
+    // instantiating state machine and transitions
+    m_stateMachine = new DoorStateMachine<string, BaseDoorState<string>>();
+    m_closedToOpenTransition = new TriggeredTransition<string>(m_stateMachine, "closed_state", "open_state");
+    m_openToClosedTransition = new TriggeredTransition<string>(m_stateMachine, "open_state", "closed_state");
+
+    // TimedTransition will automatically start the timer when state machine changes state to state we transition from
+    m_closedToLockedTransition = new TimedTransition<string>(m_stateMachine, "closed_state", "locked_state", m_closeDelaySeconds);
+
+    // ConditionalTransition requires you to call TickCondition() method
+    m_lockedToClosedTransition = new ConditionalTransition<string>(m_stateMachine, "locked_state", "closed_state", () => m_password == m_inputPassword);
 
     // adding states
-    m_stateMachine.AddState(new RootState("root_state"));
     m_stateMachine.AddState(new OpenState("open_state"));
     m_stateMachine.AddState(new ClosedState("closed_state"));
-    m_stateMachine.AddState(new LockedState("locked_state"));
-
-    // building state hierarchy
-    m_stateMachine.SetRoot("root_state");
-    m_stateMachine.MakeParent("open_state", "root_state");
-    m_stateMachine.MakeParent("closed_state", "root_state");
-    m_stateMachine.MakeParent("locked_state", "closed_state");
-
-    // adding transitions between states
-    m_stateMachine.Transitions.Add(new Transition<string>("open_state", "closed_state", () => Input.GetKeyDown(KeyCode.Space)));
-    m_stateMachine.Transitions.Add(new Transition<string>("closed_state", "open_state", () => Input.GetKeyDown(KeyCode.Space)));
-    m_stateMachine.Transitions.Add(new Transition<string>("closed_state", "locked_state", () => Input.GetKeyDown(KeyCode.L)));
-    m_stateMachine.Transitions.Add(new Transition<string>("locked_state", "closed_state", () => Input.GetKeyDown(KeyCode.L)));
 
     // switching to initial state
     m_stateMachine.ChangeState("closed_state");
   }
 
-  private void Update()
+  public void Open()
   {
-    m_stateMachine.TickTransitions();
-    m_stateMachine.Tick(Time.deltaTime);
+    m_closedToOpenTransition.Trigger();
+  }
+
+  public void Close()
+  {
+    m_openToClosedTransition.Trigger();
+  }
+
+  public void Tick(float deltaTime)
+  {
+    m_stateMachine.Tick(deltaTime);
+    m_closedToLockedTransition.Tick(deltaTime); // ticking timer for the TimedTransition
+  }
+
+  public void InputPassword(string password)
+  {
+    m_inputPassword = password;
+    m_lockedToClosedTransition.TickCondition(); // checking condition once after password is attempted
   }
 }
 ```
