@@ -19,6 +19,7 @@ namespace SimpleStateMachines.Hierarchical
                 throw new ArgumentNullException(nameof(state));
 
             m_state = state;
+            m_children = new List<StateNode<TId, TState>>();
         }
 
         public TState State => m_state;
@@ -139,3 +140,4 @@ namespace SimpleStateMachines.Hierarchical
         }
     }
 }
+
