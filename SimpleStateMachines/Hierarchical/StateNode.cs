@@ -12,6 +12,7 @@ namespace SimpleStateMachines.Hierarchical
         private StateNode<TId, TState> m_parent;
         private StateNode<TId, TState> m_activeChild;
         private List<StateNode<TId, TState>> m_children;
+        private bool m_isActive;
 
         public StateNode(TState state)
         {
@@ -58,10 +59,7 @@ namespace SimpleStateMachines.Hierarchical
 
         public bool IsActive()
         {
-            if (m_parent == null)
-                return true;
-
-            return m_parent.Active == this;
+            return m_isActive;
         }
 
         public void Enter()
@@ -75,6 +73,7 @@ namespace SimpleStateMachines.Hierarchical
             }
 
             m_state.Enter();
+            m_isActive = true;
         }
 
         public void Exit()
@@ -82,6 +81,7 @@ namespace SimpleStateMachines.Hierarchical
             m_activeChild?.Exit();
             m_activeChild = null;
             m_state.Exit();
+            m_isActive = false;
         }
 
         public List<StateNode<TId, TState>> GetPathToRoot()
@@ -140,4 +140,5 @@ namespace SimpleStateMachines.Hierarchical
         }
     }
 }
+
 
