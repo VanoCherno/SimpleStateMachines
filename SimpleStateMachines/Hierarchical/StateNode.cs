@@ -129,6 +129,8 @@ namespace SimpleStateMachines.Hierarchical
             {
                 if (nodes.Contains(node))
                     return node;
+
+                node = node.Parent;
             }
 
             return null;
@@ -140,5 +142,6 @@ namespace SimpleStateMachines.Hierarchical
         }
     }
 }
+
 
 
