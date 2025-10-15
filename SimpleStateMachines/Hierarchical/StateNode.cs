@@ -67,11 +67,12 @@ namespace SimpleStateMachines.Hierarchical
             if (m_parent != null)
             {
                 m_parent.SetActiveChild(this);
-
-                if (!m_parent.IsActive())
-                    m_parent.Enter();
+                m_parent.Enter();
             }
 
+            if (m_isActive)
+                return;
+            
             m_state.Enter();
             m_isActive = true;
         }
@@ -142,6 +143,7 @@ namespace SimpleStateMachines.Hierarchical
         }
     }
 }
+
 
 
 
